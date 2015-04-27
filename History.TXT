@@ -1,0 +1,6 @@
+Thermistor Logging with timestamps - 2014-09-27
+- Use a MAX31855 to interface with a K-type thermocouple. Take multiple readings over a second, and average the median 5. Use a chronodot to create a timestamp for a filename and save the 1 second temperature average with a timestamp to the file in csv format.
+
+Thermistor Logging with display - 2015-01-07
+- Add display functions for a 2-line LCD display, but structure it to potentially upgrade to a small screen with trend log display.
+

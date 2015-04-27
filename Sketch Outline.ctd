@@ -1,0 +1,118 @@
+<?xml version="1.0" ?><cherrytree><node name="Brainstorming" prog_lang="custom-colors" readonly="False" tags="" unique_id="7"><rich_text>☑ Every time the thermocouple is read, change the state of the LED_BUILTIN (pin 13 on UNOs)
+
+☑ After setting up the chronodot to output the 1Hz square, create filename based on starting date/time stamp in </rich_text><rich_text strikethrough="true">ISO8601 format (yyyy-mm-ddThhmmss)</rich_text><rich_text> &quot;MMDDhhmm&quot; format with &quot;.csv&quot; as the extension (The default Arduino SD library only supports 8.3 filenames). Write first line with column headers.
+
+☑ If the opening or writing the file craps out, stop and loop having the state of LED_BUILTIN follow the state of the sqw pin. i.e. if the LED is flashing at 1Hz then there is an SD I/O error.
+
+☑ Setup rolling buffer </rich_text><rich_text strikethrough="true">of 9 samples.</rich_text><rich_text> larger than number of samples able to be captured in 1 second. Then clear the buffer once the average is taken.
+
+☑ Monitor the 1Hz square wave of the chronodot. On falling edge get date and time, formulate per ISO8601 and save to SD card one line that contains date/time stamp, the average 5 median temperature samples, (and at least during development the number of samples in the median buffer). Clear the median buffer.
+
+☑ Between pulses, read the temperature and add it to the rolling buffer once every 100 ms.
+</rich_text></node><node name="Hardware connections" prog_lang="custom-colors" readonly="False" tags="" unique_id="8"><rich_text>☑ The shield I plan on using is my wireless shield (has uSD slot and XBee headers). I'll solder a chronodot to the proto area and if there is room jumpers to enable different I/O. For this project I need the two I2C lines and the SQW pin.
+
+☑ First display is a 2 line LCD display, cheap and simple to implement. Craft the code to allow changing the display simply by changing the display routine(s), nothing else beyond setup details for the specific display.</rich_text><node name="Chronodot" prog_lang="custom-colors" readonly="False" tags="" unique_id="9"><rich_text>Comms: A4 &amp; A5 for SDA&amp; SCL (respectively) - Don't forget pull-up resistors.
+
+Square Wave: D5 (Timer0) - Don't forget pull-up resistor. (First try INPUT_PULLUP pinmode for the 20k internall pull-up. If this isn't good enough use an external 10k pull-up.)
+
+Have this mounted to a shield with an SD (or uSD) slot.
+
+Possibly have the RST pin connected to the arduino reset pin to make the reset circuit more robust. (Note that this may interfere with the auto-reset using while programming. Test this to make sure.)
+</rich_text></node><node name="SD (or uSD) card" prog_lang="custom-colors" readonly="False" tags="" unique_id="10"><rich_text>SPI connections
+CS = D4 (default for most shields)
+</rich_text></node><node name="MAX31855 Thermocouple interface" prog_lang="custom-colors" readonly="False" tags="" unique_id="11"><rich_text>SPI connections
+CS = 10 (choose another if the shield already uses this for something else)
+</rich_text></node><node name="2 Line LCD" prog_lang="custom-colors" readonly="False" tags="" unique_id="13"><rich_text>Parallel interface.
+
+LCD_VSS (pin1) = GND
+LCD_VDD (pin2) = +5
+LCD_V0 (pin3) = wiper of 10k Pot (for contrast)
+LCD_RS (pin4) = A1
+LCD_R/W (pin5) = GND
+LCD_Enable (pin6) = A0
+
+LCD_D4 (pin11) = 2
+LCD_D5 (pin12) = 3
+LCD_D6 (pin13) = 6
+LCD_D7 (pin14) = 7
+</rich_text></node></node><node name="PseudoCode" prog_lang="custom-colors" readonly="False" tags="" unique_id="1"><rich_text></rich_text><node name="Header Comments" prog_lang="custom-colors" readonly="False" tags="" unique_id="6"><rich_text></rich_text></node><node name="Inludes" prog_lang="cpp" readonly="False" tags="" unique_id="2"><rich_text>// 16x2 LCD Display
+#include &lt;LiquidCrystal.h&gt;
+const byte LCD_RS = A1; // pin4
+const byte LCD_Enable = A0; // pin6
+const byte LCD_D4 = 2; // pin11
+const byte LCD_D5 = 3; // pin12
+const byte LCD_D6 = 6; // pin13
+const byte LCD_D7 = 7; // pin14
+// LCD_VSS (pin1) to GND
+// LCD_VDD (pin2) to +5
+// 10k Pot +5 to GND, wiper to LCD_V0 (pin3) for contrast
+// LCD_R/W (pin5) to ground
+LiquidCrystal lcd(LCD_RS, LCD_Enable, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
+
+// Chronodot
+#include &lt;Wire.h&gt;
+#include &lt;Chronodot.h&gt;
+
+Chronodot chron = Chronodot();
+const byte sqwPin = 5;
+
+// Thermocouple
+#include &lt;SPI.h&gt;
+#include &quot;Adafruit_MAX31855.h&quot;
+
+const byte tC_CS = 10; // Chip select for reading the thermoucouple with the MAX31855
+Adafruit_MAX31855 thermocouple(tC_CS);
+
+
+// SD Card
+#include &lt;SD.h&gt;
+
+const byte SD_CS = 4; // Chip select for accessing the SD card.
+
+// RunningMdian
+#include &lt;RunningMedian.h&gt;
+
+RunningMedian temperatures = RunningMedian(9);
+</rich_text></node><node name="Globals" prog_lang="cpp" readonly="False" tags="" unique_id="3"><rich_text>const boolean indicatorLED = false;  // Tradking variable for the state of LED_BUILTIN during normal operation.
+
+char filename[] = &quot;MMDDhhmm.csv&quot;; // filename template. Use array access to overwrite the template indicators with actual values.
+
+</rich_text></node><node name="Startup()" prog_lang="custom-colors" readonly="False" tags="" unique_id="4"><rich_text>Set pinmodes:
+• SQWPin as INPUT_PULLUP
+• tC_CS as OUTPUT
+• SD_CS as OUTPUT
+• LED_BUILTIN as OUTPUT
+
+Setup chronodot for 1Hz sqw pin
+Get time from chronodot.
+</rich_text><rich_text strikethrough="true">Formulate time as &quot;yyyy-mm-ssThhmmss&quot; and set as filename with extension of &quot;.csv&quot;</rich_text><rich_text>
+Forumlate time as &quot;MMDDhhmm.csv&quot; (Arduino SD library doesn't support long file names, need to find one that does.)
+Try to open file
+If successful
+• Write header of csv file &quot;Date_Time,Temperature,Samples&quot;
+else jump to SDError() and stay there
+</rich_text></node><node name="Loop()" prog_lang="custom-colors" readonly="False" tags="" unique_id="5"><rich_text>check if at least 100ms has passed since last thermistor read
+if it has:
+• change the state of the LED_BUILTIN
+• add 100 to the current millis() and store in the thermistor read timer variable (Yes, I know this might lead to thermistor reads separated by more that 100ms, but I'm interested in reading at a maximum of 10Hz, not exactly 10Hz.)
+• Read the thermistor and store it in the rolling median buffer.
+else do nothing
+
+check to see if the 1Hz sqw pin of the chronodot has change state
+if it has:
+• Store the new state
+• if the state change is from high to low (indicating the start of a new second).
+    • Read the time and date from the chronodot
+    • formulate time and date into (pseudo) ISO8601 format (yyyy-mm-dd hh:mm:ss)
+    • Get the average of the middle median temperatures
+    • Get the size of the rolling median buffer
+    • Store the data in a file on the SD card as &quot;time&amp;date,temperature,buffer_size&quot;
+    • Flush the file write buffer.
+    • Clear the rolling median buffer.
+• else do nothing
+else do nothing
+ </rich_text></node><node name="SDError()" prog_lang="cpp" readonly="False" tags="" unique_id="12"><rich_text>while(1)
+{
+    digitalWrite(LED_BUILTIN,digitalRead(sqwPin));
+}
+</rich_text></node></node></cherrytree>
